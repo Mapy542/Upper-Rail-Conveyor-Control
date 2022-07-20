@@ -15,12 +15,25 @@ const byte condition = 8;
 // 1 or AccelStepper::DRIVER means a stepper driver (with Step and Direction pins)
 AccelStepper stepper(AccelStepper::DRIVER, stepPin, directionPin);
 
+//control vars
 byte state = 0; //0 un initalized, 1 idle, 2 conveying, 3 error
 byte alarmstate = 0; //0 off, 1 low alarm, 2 error alarm;
 byte transferstate = 0; // 0 both loaded, 1 robot lockout, 2 empty
 byte movestate = 0; //0 empty forward, 1 moving forward eye rising edge, 2 moving forward eye falling edge
 long alarmfreq = 0; //keep track of what the alarm is doing
-unsigned long alarmsettime = 0;
+unsigned long alarmsettime = 0; //find timedelta for each alarm phase cycle (after .5 secs toggle from high to low depending on alarm)
+
+//Library Documentation-- kinda
+//stepper.runSpeed(); //run forever
+
+//stepper.runToPosition(); // blocking line continues when complete
+//  if (stepper.distanceToGo() == 0) // get delta
+//stepper.moveTo(-stepper.currentPosition()); // set absolute destination
+//stepper.run(); //step
+//stepper.move(17); //set relative destination
+//stepper.stop(); //stops asap
+
+
 void setup()
 {
   Serial.begin(9600);
@@ -100,17 +113,6 @@ void alarmMan() {
 
 void loop()
 {
-
-  //Library Documentation-- kinda
-  //stepper.runSpeed(); //run forever
-
-  //stepper.runToPosition(); // blocking line continues when complete
-  //  if (stepper.distanceToGo() == 0) // get delta
-  //stepper.moveTo(-stepper.currentPosition()); // set absolute destination
-  //stepper.run(); //step
-  //stepper.move(17); //set relative destination
-  //stepper.stop(); //stops asap
-
   //control
   switch (state) {
     case 0:
@@ -189,8 +191,8 @@ void loop()
           if (digitalRead(leftEye) && digitalRead(rightEye)) { //there was rails ready to move them forward
           }
           else if ((digitalRead(leftEye) || digitalRead(rightEye)) && !(digitalRead(leftEye) && digitalRead(rightEye))) { //only one detected so bad things
-          state = 3;
-          stepper.stop();
+            state = 3;
+            stepper.stop();
           }
           else { // there never was ready rail so move the next ones forward
             movestate = 0;
