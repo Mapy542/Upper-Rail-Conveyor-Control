@@ -24,7 +24,7 @@ long alarmfreq = 0; //keep track of what the alarm is doing
 unsigned long alarmsettime = 0; //find timedelta for each alarm phase cycle (after .5 secs toggle from high to low depending on alarm)
 
 //Library Documentation-- kinda
-//stepper.runSpeed(); //run forever
+//stepper.runSpeed(); //run step at constant velocity
 
 //stepper.runToPosition(); // blocking line continues when complete
 //  if (stepper.distanceToGo() == 0) // get delta
@@ -36,7 +36,7 @@ unsigned long alarmsettime = 0; //find timedelta for each alarm phase cycle (aft
 
 void setup()
 {
-  Serial.begin(9600);
+  //Serial.begin(9600);
 
   pinMode(enablePin, OUTPUT);
   pinMode(resetInput, INPUT_PULLUP);
@@ -106,7 +106,7 @@ void alarmMan() {
 
   }
 
-  if ( millis() > 86400000) {
+  if (millis() > 86400000 && state == 1 && transferstate == 0) {
     resetFunc(); //prevent overwrap time errors, aswell as buildup with a 24hour full restart.
   }
 }
@@ -122,8 +122,8 @@ void loop()
       digitalWrite(condition, LOW);
       alarmstate = 0;
       transferstate = 0;
-      movestate = 2;
-      state = 1;
+      movestate = 0;
+      state = 2; //home
       break;
 
     case 1:
