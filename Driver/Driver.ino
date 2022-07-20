@@ -6,16 +6,19 @@ const byte directionPin = 10;
 const byte enablePin = 9;
 const byte resetInput = 2; // Dpin 2
 const byte lowEye = 3;
-const byte rigthEye = 4;
+const byte rightEye = 4;
 const byte leftEye = 5;
 const byte alarm = 6;
-
+const byte robotPermit = 7;
+const byte condition = 8;
 
 // 1 or AccelStepper::DRIVER means a stepper driver (with Step and Direction pins)
 AccelStepper stepper(AccelStepper::DRIVER, stepPin, directionPin);
 
 byte state = 0; //0 un initalized, 1 idle, 2 conveying, 3 error
 byte alarmstate = 0; //0 off, 1 low alarm, 2 error alarm;
+byte transferstate = 0; // 0 both loaded, 1 robot lockout, 2 empty
+byte movestate = 0; //0 empty forward, 1 moving forward eye rising edge, 2 moving forward eye falling edge
 long alarmfreq = 0; //keep track of what the alarm is doing
 unsigned long alarmsettime = 0;
 void setup()
@@ -25,9 +28,11 @@ void setup()
   pinMode(enablePin, OUTPUT);
   pinMode(resetInput, INPUT_PULLUP);
   pinMode(lowEye, INPUT_PULLUP);
-  pinMode(rigthEye, INPUT_PULLUP);
+  pinMode(rightEye, INPUT_PULLUP);
   pinMode(leftEye, INPUT_PULLUP);
   pinMode(alarm, OUTPUT);
+  pinMode(robotPermit, INPUT_PULLUP);
+  pinMode(condition, OUTPUT);
 
   //stepper.enableOutputs();
   stepper.setMaxSpeed(1000);
@@ -95,16 +100,16 @@ void alarmMan() {
 
 void loop()
 {
-  //stepper.runSpeed();
 
-  //stepper.runToPosition();
-  //  if (stepper.distanceToGo() == 0)
-  //stepper.moveTo(-stepper.currentPosition());
-  //stepper.run();
+  //Library Documentation-- kinda
+  //stepper.runSpeed(); //run forever
 
-
+  //stepper.runToPosition(); // blocking line continues when complete
+  //  if (stepper.distanceToGo() == 0) // get delta
+  //stepper.moveTo(-stepper.currentPosition()); // set absolute destination
+  //stepper.run(); //step
+  //stepper.move(17); //set relative destination
   //stepper.stop(); //stops asap
-  //stepper.run(); //runtoposiiton is option
 
   //control
   switch (state) {
@@ -112,21 +117,119 @@ void loop()
       // init
       stepper.stop();
       digitalWrite(enablePin, HIGH);
+      digitalWrite(condition, LOW);
       alarmstate = 0;
+      transferstate = 0;
+      movestate = 2;
       state = 1;
       break;
 
     case 1:
-      //do whatever for idle
+      //wait for robot to be done  (if robot permit goes low NO MOVING)
+      digitalWrite(enablePin, HIGH);
+      digitalWrite(condition, HIGH);
+      if (!digitalRead(robotPermit) && transferstate == 0) { //detect rising edge of robot permit for takeout
+        transferstate = 1;
+      }
+      if (digitalRead(robotPermit) && transferstate == 1) { //detect falling edge of robot permit
+        transferstate = 2;
+        state = 2;
+      }
+      delay(100); //chill out man
       break;
 
     case 2:
       //run out next conveyor cycle
+      digitalWrite(enablePin, LOW);
+      digitalWrite(condition, HIGH);
+      if (transferstate == 2) { //cycle forward
+        stepper.setSpeed(50);
+        if (movestate == 0) {
+          for (int i = 0; i <= 50; i++) {
+            stepper.runSpeed();
+          }
+          if (digitalRead(leftEye) && digitalRead(rightEye)) { // if we see parts in both then we good
+            movestate = 1;
+          }
+          else { //stuck or missing part
+            stepper.stop();
+            state = 3;
+          }
+        }
+        if (movestate == 1) { //move forward untill both eyes go empty
+          stepper.runSpeed();
+          if (!digitalRead(leftEye) && !digitalRead(rightEye)) { //both go empty
+            stepper.stop();
+            movestate == 2;
+          }
+        }
+        if (movestate == 2) { //finsihed reset states and break case
+          movestate == 0;
+          transferstate == 0;
+          break;
+        }
+      }
+      if (transferstate == 0) { //rehome
+        if (digitalRead(leftEye) && digitalRead(rightEye)) { //if both eyes have parts in sight then load like normal
+          stepper.setSpeed(50);
+          do {
+            stepper.runSpeed();
+          } while (digitalRead(leftEye) || digitalRead(rightEye));
+          stepper.stop();
+          movestate = 0;
+          state = 1;
+          break;
+        }
+        else {
+          stepper.setSpeed(-50);
+          for (int i = 0; i <= 50; i++) {
+            stepper.runSpeed();
+          }
+          stepper.stop();
+          if (digitalRead(leftEye) && digitalRead(rightEye)) { //there was rails ready to move them forward
+          }
+          else if ((digitalRead(leftEye) || digitalRead(rightEye)) && !(digitalRead(leftEye) && digitalRead(rightEye))) { //only one detected so bad things
+          state = 3;
+          stepper.stop();
+          }
+          else { // there never was ready rail so move the next ones forward
+            movestate = 0;
+            do {
+              stepper.setSpeed(50);
+              if (movestate == 0) {
+                for (int i = 0; i <= 100; i++) {
+                  stepper.runSpeed();
+                }
+                if (digitalRead(leftEye) && digitalRead(rightEye)) { // if we see parts in both then we good
+                  movestate = 1;
+                }
+                else { //stuck or missing part
+                  stepper.stop();
+                  state = 3;
+                }
+              }
+              if (movestate == 1) { //move forward untill both eyes go empty
+                stepper.runSpeed();
+                if (!digitalRead(leftEye) && !digitalRead(rightEye)) { //both go empty
+                  stepper.stop();
+                  movestate == 2;
+                }
+                if (movestate == 2) { //finsihed reset states and break case
+                  movestate == 0;
+                }
+              }
+            } while (movestate != 2);
+            state = 1;
+          }
+        }
+      }
       break;
 
     case 3:
       //error
       digitalWrite(enablePin, HIGH);
+      digitalWrite(condition, LOW);
+      stepper.stop();
       alarmstate = 2;
       break;
 
@@ -135,11 +238,16 @@ void loop()
       break;
   }
 
-  if (digitalRead(resetInput)) {
+  if (!digitalRead(resetInput)) {
     state = 0;
+    do {
+      delay(5);
+    } while (!digitalRead(resetInput));
   }
   if (digitalRead(lowEye) && alarmstate != 2) {
     alarmstate = 1;
   }
+
   alarmMan();
+
 }
