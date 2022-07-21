@@ -11,6 +11,7 @@ const byte leftEye = 5;
 const byte alarm = 6;
 const byte robotPermit = 7;
 const byte condition = 8;
+const byte curtainMade = 13;
 
 // 1 or AccelStepper::DRIVER means a stepper driver (with Step and Direction pins)
 AccelStepper stepper(AccelStepper::DRIVER, stepPin, directionPin);
@@ -46,6 +47,7 @@ void setup()
   pinMode(alarm, OUTPUT);
   pinMode(robotPermit, INPUT_PULLUP);
   pinMode(condition, OUTPUT);
+  pinMode(curtainMade, INPUT_PULLUP);
 
   //stepper.enableOutputs();
   stepper.setMaxSpeed(1000);
@@ -111,6 +113,14 @@ void alarmMan() {
   }
 }
 
+void curtainHalt(){
+  if(digitalRead(CurtainMade)){
+    do{
+      delay(100);
+    }while(digitalRead(CurtainMade));
+  }
+}
+
 void loop()
 {
   //control
@@ -143,12 +153,13 @@ void loop()
     case 2:
       //run out next conveyor cycle
       digitalWrite(enablePin, LOW);
-      digitalWrite(condition, HIGH);
       if (transferstate == 2) { //cycle forward
+        digitalWrite(condition, HIGH);
         stepper.setSpeed(50);
         if (movestate == 0) {
           for (int i = 0; i <= 50; i++) {
             stepper.runSpeed();
+            curtainHalt();
           }
           if (digitalRead(leftEye) && digitalRead(rightEye)) { // if we see parts in both then we good
             movestate = 1;
@@ -156,26 +167,31 @@ void loop()
           else { //stuck or missing part
             stepper.stop();
             state = 3;
+            break;
           }
         }
         if (movestate == 1) { //move forward untill both eyes go empty
           stepper.runSpeed();
+          curtainHalt();
           if (!digitalRead(leftEye) && !digitalRead(rightEye)) { //both go empty
             stepper.stop();
-            movestate == 2;
+            movestate = 2;
           }
         }
         if (movestate == 2) { //finsihed reset states and break case
-          movestate == 0;
-          transferstate == 0;
+          movestate = 0;
+          transferstate = 0;
+          state = 1;
           break;
         }
       }
       if (transferstate == 0) { //rehome
+        digitalWrite(condition, LOW);
         if (digitalRead(leftEye) && digitalRead(rightEye)) { //if both eyes have parts in sight then load like normal
           stepper.setSpeed(50);
           do {
             stepper.runSpeed();
+            curtainHalt();
           } while (digitalRead(leftEye) || digitalRead(rightEye));
           stepper.stop();
           movestate = 0;
@@ -186,6 +202,7 @@ void loop()
           stepper.setSpeed(-50);
           for (int i = 0; i <= 50; i++) {
             stepper.runSpeed();
+            curtainHalt();
           }
           stepper.stop();
           if (digitalRead(leftEye) && digitalRead(rightEye)) { //there was rails ready to move them forward
@@ -201,6 +218,7 @@ void loop()
               if (movestate == 0) {
                 for (int i = 0; i <= 100; i++) {
                   stepper.runSpeed();
+                  curtainHalt();
                 }
                 if (digitalRead(leftEye) && digitalRead(rightEye)) { // if we see parts in both then we good
                   movestate = 1;
@@ -212,6 +230,7 @@ void loop()
               }
               if (movestate == 1) { //move forward untill both eyes go empty
                 stepper.runSpeed();
+                curtainHalt();
                 if (!digitalRead(leftEye) && !digitalRead(rightEye)) { //both go empty
                   stepper.stop();
                   movestate == 2;
