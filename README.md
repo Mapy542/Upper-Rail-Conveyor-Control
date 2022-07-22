@@ -1,2 +1,4 @@
 # Upper Rail Conveyor Control
- Tech Tank Machine Code for controlling a stepper from inputs
+
+Control system for a hanging rail part conveyor.
+Communicates with a Mitsubishi robot arm via one input and one ouput.
